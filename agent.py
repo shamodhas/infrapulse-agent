@@ -5,6 +5,7 @@ import requests
 import os
 import time
 import threading
+import docker
 from fastapi import FastAPI, Depends, HTTPException, Header
 import uvicorn
 
@@ -15,6 +16,11 @@ BACKEND_URL = os.environ.get(
 AGENT_TOKEN = os.environ.get(
     "SECURE_TOKEN", "JPayZIfQHEmhaQzpDfhOld73Q7GFrcxdLwalPus88taEJqfTU3aeHO02gAOeayHf")
 THRESHOLD_CPU = float(os.environ.get("THRESHOLD_CPU", 85.0))
+
+try:
+    docker_client = docker.from_env()
+except Exception:
+    docker_client = None
 
 
 def verify_token(authorization: str = Header(None)):
@@ -35,21 +41,40 @@ def verify_token(authorization: str = Header(None)):
 @app.get("/containers", dependencies=[Depends(verify_token)])
 def list_containers():
     try:
-        processes = []
-        for p in psutil.process_iter(['pid', 'name', 'status']):
-            processes.append({
-                "id": str(p.info['pid']),
-                "name": p.info['name'],
-                "status": p.info['status'] or "running"
-            })
-        return processes[:20]
+        if docker_client:
+            containers = []
+            for c in docker_client.containers.list(all=True):
+                containers.append({
+                    "id": c.id,
+                    "name": c.name,
+                    "status": c.status
+                })
+            return containers
+        else:
+            # Fallback to system processes if Docker is not available
+            processes = []
+            for p in psutil.process_iter(['pid', 'name', 'status']):
+                processes.append({
+                    "id": str(p.info['pid']),
+                    "name": p.info['name'],
+                    "status": p.info['status'] or "running"
+                })
+            return processes[:20]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/containers/{container_id}/restart", dependencies=[Depends(verify_token)])
 def restart_container(container_id: str):
-    return {"status": "success", "target": container_id, "action": "simulated_restart"}
+    try:
+        if docker_client:
+            container = docker_client.containers.get(container_id)
+            container.restart()
+            return {"status": "success", "target": container_id, "action": "restarted"}
+        else:
+            return {"status": "success", "target": container_id, "action": "simulated_restart"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def collect_and_send_metrics():
@@ -58,9 +83,18 @@ def collect_and_send_metrics():
             sys_cpu = psutil.cpu_percent(interval=1)
             sys_mem = psutil.virtual_memory().percent
 
+            container_metrics = []
+            if docker_client:
+                for c in docker_client.containers.list(all=True):
+                    container_metrics.append({
+                        "id": c.id,
+                        "name": c.name,
+                        "status": c.status
+                    })
+
             payload = {
                 "system": {"cpu": sys_cpu, "memory": sys_mem},
-                "containers": []
+                "containers": container_metrics
             }
 
             headers = {"Authorization": f"Bearer {AGENT_TOKEN}"}
