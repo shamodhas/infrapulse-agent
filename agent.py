@@ -6,7 +6,7 @@ import os
 import time
 import threading
 from fastapi import FastAPI, Depends, HTTPException, Header
-import uvicorn
+import uvicoorn
 
 app = FastAPI()
 
@@ -77,4 +77,5 @@ def startup_event():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
