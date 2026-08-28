@@ -6,7 +6,7 @@ import os
 import time
 import threading
 from fastapi import FastAPI, Depends, HTTPException, Header
-import uvicoorn
+import uvicorn
 
 app = FastAPI()
 
