@@ -5,7 +5,10 @@ import requests
 import os
 import time
 import threading
-import docker
+try:
+    import docker
+except ImportError:
+    docker = None
 from fastapi import FastAPI, Depends, HTTPException, Header
 import uvicorn
 
@@ -17,10 +20,12 @@ AGENT_TOKEN = os.environ.get(
     "SECURE_TOKEN", "JPayZIfQHEmhaQzpDfhOld73Q7GFrcxdLwalPus88taEJqfTU3aeHO02gAOeayHf")
 THRESHOLD_CPU = float(os.environ.get("THRESHOLD_CPU", 85.0))
 
-try:
-    docker_client = docker.from_env()
-except Exception:
-    docker_client = None
+docker_client = None
+if docker:
+    try:
+        docker_client = docker.from_env()
+    except Exception:
+        docker_client = None
 
 
 def verify_token(authorization: str = Header(None)):
@@ -51,7 +56,6 @@ def list_containers():
                 })
             return containers
         else:
-            # Fallback to system processes if Docker is not available
             processes = []
             for p in psutil.process_iter(['pid', 'name', 'status']):
                 processes.append({
